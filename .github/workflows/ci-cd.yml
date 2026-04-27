@@ -1,0 +1,118 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Nom du pipeline : affiché dans l'onglet "Actions" de GitHub
+# ──────────────────────────────────────────────────────────────────────────────
+name: CI/CD Pipeline
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DÉCLENCHEURS : quand ce pipeline se lance-t-il ?
+# ──────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches:
+      - main        # À chaque push sur la branche principale
+      - develop     # À chaque push sur la branche de développement
+  pull_request:
+    branches:
+      - main        # À chaque Pull Request vers main
+
+# ──────────────────────────────────────────────────────────────────────────────
+# JOBS : les étapes du pipeline
+# ──────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # JOB 1 — CI : Tests & Qualité du code
+  # ────────────────────────────────────────────────────────────────────────────
+  test:
+    name: 🧪 Tests & Lint
+    runs-on: ubuntu-latest   # GitHub fournit une machine virtuelle Ubuntu gratuite
+
+    steps:
+      # 1. Récupère le code du dépôt
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      # 2. Installe Node.js (version LTS)
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'        # Met en cache node_modules pour accélérer les prochains runs
+
+      # 3. Installe les dépendances (npm ci = installation propre et reproductible)
+      - name: 📦 Installation des dépendances
+        run: npm ci
+
+      # 4. Lance les tests avec couverture de code
+      - name: ✅ Lancer les tests
+        run: npm test
+
+      # 5. Upload du rapport de couverture (optionnel mais pratique)
+      - name: 📊 Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()          # Même si les tests échouent, on veut voir le rapport
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Build Docker (seulement si les tests passent)
+  # ────────────────────────────────────────────────────────────────────────────
+  build:
+    name: 🐳 Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test               # Ce job attend que le job "test" réussisse
+
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      # Construit l'image Docker pour vérifier que le Dockerfile est valide
+      - name: 🔨 Build de l'image Docker
+        run: docker build -t demo-cicd:${{ github.sha }} .
+
+      # Vérifie que le conteneur démarre correctement
+      - name: 🚀 Test du démarrage du conteneur
+        run: |
+          docker run -d -p 3000:3000 --name test-container demo-cicd:${{ github.sha }}
+          sleep 3
+          curl --fail http://localhost:3000/health
+          docker stop test-container
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # JOB 3 — CD : Déploiement (seulement sur la branche main)
+  # ────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: 🚀 Déploiement
+    runs-on: ubuntu-latest
+    needs: build              # Attend que le build Docker réussisse
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      # Connexion à Docker Hub (nécessite des secrets GitHub configurés)
+      - name: 🔐 Connexion à Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Construction et push de l'image avec deux tags :
+      # - le SHA du commit (ex: demo-cicd:abc1234) → version précise
+      # - "latest" → toujours la dernière version
+      - name: 🏗️ Build & Push vers Docker Hub
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/demo-cicd:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/demo-cicd:latest
+
+      - name: ✅ Déploiement terminé
+        run: |
+          echo "Image déployée avec succès !"
+          echo "Tag: ${{ secrets.DOCKERHUB_USERNAME }}/demo-cicd:latest"

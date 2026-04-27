@@ -1,0 +1,24 @@
+{
+  "name": "demo-cicd",
+  "version": "1.0.0",
+  "description": "Petit projet pour pratiquer CI/CD avec GitHub Actions",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest --coverage",
+    "lint": "eslint src/**/*.js"
+  },
+  "keywords": ["ci-cd", "github-actions", "demo"],
+  "author": "FormationCDA",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "nodemon": "^3.0.2",
+    "eslint": "^8.57.0"
+  }
+}
